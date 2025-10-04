@@ -31,6 +31,10 @@ type AnalyzeResponse = {
   summary: SummaryMetrics;
   tokens: TokenBreakdown[];
   insights: Insight[];
+  meta?: {
+    source?: string;
+    isFallback?: boolean;
+  };
 };
 
 type WalletHistoryItem = {
@@ -78,6 +82,7 @@ const dateTime = new Intl.DateTimeFormat("en-US", {
 export default function WalletAnalyzerPage() {
   const [address, setAddress] = useState("");
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
+  const [analysisMeta, setAnalysisMeta] = useState<AnalyzeResponse["meta"] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeAddress, setActiveAddress] = useState<string | null>(null);
@@ -97,17 +102,20 @@ export default function WalletAnalyzerPage() {
     setIsLoading(true);
     setError(null);
     setResult(null);
+    setAnalysisMeta(null);
     setHistory([]);
     setHistoryError(null);
     setHistoryMeta(null);
 
     try {
-      const data = await mockAnalyze(trimmed);
+      const data = await fetchAnalysis(trimmed);
       setResult(data);
+      setAnalysisMeta(data.meta ?? null);
       setActiveAddress(trimmed);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to analyze wallet right now");
       setResult(null);
+      setAnalysisMeta(null);
       setActiveAddress(null);
     } finally {
       setIsLoading(false);
@@ -163,13 +171,16 @@ export default function WalletAnalyzerPage() {
       return { label: "Scanning", className: "bg-[#f7d976]/25 text-[#f9e7a9] border-[#f7d976]/40" };
     }
     if (result) {
+      if (analysisMeta?.isFallback) {
+        return { label: "Demo preview", className: "bg-[#2d0e0e] text-[#f7d976] border-[#f7d976]/40" };
+      }
       return { label: "Analysis Ready", className: "bg-[#f7d976] text-[#2d0e0e] border-transparent" };
     }
     if (error) {
       return { label: "Check Input", className: "bg-[#2d0e0e] text-[#f7d976] border-[#f7d976]/40" };
     }
     return { label: "Awaiting Address", className: "bg-[#1a0906] text-[#f7d976] border-[#f7d976]/25" };
-  }, [isLoading, result, error]);
+  }, [isLoading, result, error, analysisMeta]);
 
   return (
     <div className="min-h-screen text-[#f9e7a9]">
@@ -232,7 +243,7 @@ export default function WalletAnalyzerPage() {
       </header>
 
       <main className="mx-auto max-w-6xl space-y-12 px-6 py-12">
-        <SummarySection summary={result?.summary} loading={isLoading} />
+        <SummarySection summary={result?.summary} loading={isLoading} meta={analysisMeta} />
         <HoldingsSection tokens={result?.tokens ?? []} loading={isLoading} />
         <InsightsSection insights={result?.insights ?? []} loading={isLoading} />
         <HistorySection
@@ -260,7 +271,15 @@ export default function WalletAnalyzerPage() {
   );
 }
 
-function SummarySection({ summary, loading }: { summary?: SummaryMetrics; loading: boolean }) {
+function SummarySection({
+  summary,
+  loading,
+  meta,
+}: {
+  summary?: SummaryMetrics;
+  loading: boolean;
+  meta: AnalyzeResponse["meta"] | null;
+}) {
   const items = summary
     ? [
         {
@@ -286,7 +305,18 @@ function SummarySection({ summary, loading }: { summary?: SummaryMetrics; loadin
 
   return (
     <section className="rounded-3xl border border-[#f7d976]/25 bg-[#1a0906]/80 p-8 shadow-[0_20px_40px_rgba(0,0,0,0.35)] backdrop-blur">
-      <h2 className="text-xl font-semibold text-white">Portfolio Summary</h2>
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <h2 className="text-xl font-semibold text-white">Portfolio Summary</h2>
+        {meta?.isFallback ? (
+          <span className="inline-flex items-center rounded-full border border-[#f7d976]/30 bg-[#120806]/70 px-3 py-1 text-xs text-[#f7d976]">
+            Demo data — add API keys for live balances
+          </span>
+        ) : meta?.source ? (
+          <span className="inline-flex items-center rounded-full border border-[#f7d976]/25 bg-[#120806]/70 px-3 py-1 text-xs text-[#cdbd8b]">
+            Powered by {meta.source}
+          </span>
+        ) : null}
+      </div>
       <p className="mt-2 text-sm text-[#d4c49b]">
         Key metrics across all supported chains including performance, realized gains, and risk stance.
       </p>
@@ -620,49 +650,35 @@ function formatCounterparty(direction: WalletHistoryItem["direction"], counterpa
   return direction === "in" ? `From ${normalized}` : direction === "out" ? `To ${normalized}` : `Self: ${normalized}`;
 }
 
-// Temporary stub to mimic the AI + data pipeline until backend routes are wired up.
-async function mockAnalyze(address: string): Promise<AnalyzeResponse> {
-  await new Promise((resolve) => setTimeout(resolve, 1200));
-
+async function fetchAnalysis(address: string): Promise<AnalyzeResponse> {
   if (!address.match(/^(0x[a-fA-F0-9]{6,}|[\w-]+\.[a-z]+)$/)) {
     throw new Error("Address looks incorrect. Try checksum hex or ENS.");
   }
 
-  return {
-    summary: {
-      netWorth: 128530,
-      netWorthChange: 2640,
-      netWorthChangePct: 2.08,
-      realizedPnl: 48210,
-      realizedPnlPct: 37.2,
-      riskLevel: "Moderate",
-    },
-    tokens: [
-      { symbol: "ETH", protocol: "Mainnet", valueUsd: 45210, change24h: 1.82, allocationPct: 35.2 },
-      { symbol: "USDC", protocol: "Arbitrum", valueUsd: 31180, change24h: 0.1, allocationPct: 24.3 },
-      { symbol: "stETH", protocol: "Lido", valueUsd: 25560, change24h: 1.32, allocationPct: 19.9 },
-      { symbol: "OP", protocol: "Optimism", valueUsd: 10840, change24h: -0.6, allocationPct: 8.4 },
-      { symbol: "GHO", protocol: "Aave", valueUsd: 7400, change24h: 0.5, allocationPct: 5.8 },
-    ],
-    insights: [
-      {
-        title: "Stablecoin buffer is healthy",
-        detail:
-          "24% of holdings sit in USDC and GHO, giving you 8 months of runway at the current 30-day average outflow. Maintain at least 18% to cover DAO commitments.",
-        tone: "positive",
-      },
-      {
-        title: "Rebalance stETH exposure",
-        detail:
-          "stETH now represents 20% of assets after recent appreciation. Consider shifting 3-5% back into liquid ETH or USDC to keep staking risk within policy.",
-        tone: "warning",
-      },
-      {
-        title: "Governance participation opportunity",
-        detail:
-          "OP voting rewards are live this epoch. Delegating 40% of your OP position could earn an estimated 8% APR while reinforcing Optimism governance goals.",
-        tone: "neutral",
-      },
-    ],
-  };
+  const response = await fetch(`/api/analyze?address=${encodeURIComponent(address)}`, {
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const clone = response.clone();
+    let message = `Analysis request failed (${response.status})`;
+    try {
+      const payload = await clone.json();
+      if (payload?.error) {
+        message = payload.error;
+      }
+    } catch {
+      try {
+        const text = await clone.text();
+        if (text) {
+          message = text;
+        }
+      } catch {
+        // ignore
+      }
+    }
+    throw new Error(message);
+  }
+
+  return (await response.json()) as AnalyzeResponse;
 }
