@@ -17,8 +17,9 @@ function getClientIdentifier(request: NextRequest, fallback?: string) {
     }
   }
 
-  if (request.ip) {
-    return request.ip;
+  const realIp = request.headers.get("x-real-ip");
+  if (realIp) {
+    return realIp;
   }
 
   return fallback ?? "unknown";
