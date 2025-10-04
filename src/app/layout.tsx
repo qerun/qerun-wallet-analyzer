@@ -17,9 +17,25 @@ export const metadata: Metadata = {
   description:
     "Analyze wallet health, balances, and on-chain performance across chains.",
   icons: {
-    icon: "/assets/wallet-crown.png",
-    shortcut: "/assets/wallet-crown.png",
-    apple: "/assets/wallet-crown.png",
+    icon: [
+      {
+        url: "/favicon-32x32.png",
+        sizes: "32x32",
+        type: "image/png",
+      },
+      {
+        url: "/favicon-16x16.png",
+        sizes: "16x16",
+        type: "image/png",
+      },
+      {
+        url: "/favicon-512x512.png",
+        sizes: "512x512",
+        type: "image/png",
+      },
+    ],
+    shortcut: "/favicon-32x32.png",
+    apple: "/apple-touch-icon.png",
   },
 };
 
