@@ -221,7 +221,6 @@ async function fetchTransactionsForChain(address: string, chain: string, sinceIs
       order: "desc",
       from_date: sinceIso,
       cursor,
-      include: "labels",
     });
 
     const txs = Array.isArray(data.result) ? data.result : [];
