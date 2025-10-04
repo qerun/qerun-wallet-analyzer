@@ -36,11 +36,11 @@ const CHAIN_METADATA: Record<string, { explorer: string; symbol: string }> = {
   },
 };
 
-const SIX_MONTHS = 6;
+const HISTORY_LOOKBACK_DAYS = 14;
 
 export async function getWalletHistory(address: string) {
   try {
-    const moralisItems = await fetchMoralisTransactions(address, SIX_MONTHS);
+    const moralisItems = await fetchMoralisTransactions(address, HISTORY_LOOKBACK_DAYS);
 
     const normalized: WalletTransaction[] = moralisItems.map((item) => {
       const normalizedAddress = address.toLowerCase();

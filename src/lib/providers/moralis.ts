@@ -176,10 +176,10 @@ async function fetchBalancesForChain(address: string, chain: string) {
   return [nativeHolding, ...tokenHoldings];
 }
 
-export async function fetchMoralisTransactions(address: string, months = 6) {
+export async function fetchMoralisTransactions(address: string, days = 14) {
   const chains = resolveChains();
   const since = new Date();
-  since.setMonth(since.getMonth() - months);
+  since.setDate(since.getDate() - days);
   const sinceIso = since.toISOString();
 
   const settlements = await Promise.allSettled(
