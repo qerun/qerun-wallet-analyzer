@@ -198,9 +198,9 @@ export default function WalletAnalyzerPage() {
               <Image
                 src="/assets/logo.png"
                 alt="Qerun crown logo"
-                width={96}
-                height={96}
-                className="rounded-3xl drop-shadow-[0_8px_20px_rgba(247,217,118,0.25)]"
+                width={100}
+                height={100}
+                className="rounded-3xl drop-shadow-[0_8px_24px_rgba(247,217,118,0.35)]"
                 priority
               />
               <span className="inline-flex items-center gap-2 rounded-full border border-[#f7d976]/40 bg-[#f7d976]/15 px-4 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-[#f9e7a9]">
