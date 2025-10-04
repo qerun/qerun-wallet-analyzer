@@ -109,39 +109,41 @@ export async function fetchMoralisBalances(address: string) {
 }
 
 async function fetchBalancesForChain(address: string, chain: string) {
-  const [native, tokens] = await Promise.all([
-    moralisFetch<{
+  const data = await moralisFetch<{
+    nativeToken?: {
       balance: string;
-      chain: string;
-      decimals: number;
-      symbol?: string;
+      decimals?: number;
       name?: string;
-      usd_price?: number | string | null;
-      usd_value?: number | string | null;
-      usd_value_24h?: number | string | null;
-      token_address?: string;
+      symbol?: string;
       logo?: string | null;
-    }>(`/${address}/balance`, {
-      chain,
-      include: "usd",
-    }),
-    moralisFetch<{
-      result: Array<{
-        token_address: string;
-        name?: string;
-        symbol?: string;
-        logo?: string | null;
-        decimals?: number;
-        balance: string;
-        usd_price?: number | string | null;
-        usd_value?: number | string | null;
-        usd_value_24h?: number | string | null;
-      }>;
-    }>(`/${address}/erc20`, {
-      chain,
-      include: "usd",
-    }),
-  ]);
+      usdPrice?: number | string | null;
+      usdValue?: number | string | null;
+      usdValue24h?: number | string | null;
+    };
+    tokens?: Array<{
+      tokenAddress?: string;
+      name?: string;
+      symbol?: string;
+      logo?: string | null;
+      decimals?: number;
+      balance: string;
+      usdPrice?: number | string | null;
+      usdValue?: number | string | null;
+      usdValue24h?: number | string | null;
+    }>;
+  }>(`/wallets/${address}/tokens`, {
+    chain,
+    include: "erc20Metadata,usd",
+  });
+
+  const native = data?.nativeToken;
+  const tokenResults = Array.isArray(data?.tokens) ? data.tokens : [];
+
+  console.log("[Moralis] Wallet tokens response", {
+    chain,
+    hasNative: Boolean(native),
+    tokenCount: tokenResults.length,
+  });
 
   const nativeHolding: MoralisTokenHolding = {
     chain,
@@ -149,14 +151,12 @@ async function fetchBalancesForChain(address: string, chain: string) {
     name: native?.name ?? `${chain.toUpperCase()} Native`,
     decimals: native?.decimals ?? 18,
     balance: native?.balance ?? "0",
-    usdPrice: toNumber(native?.usd_price),
-    usdValue: toNumber(native?.usd_value),
-    usdValue24h: toNumber(native?.usd_value_24h),
+    usdPrice: toNumber(native?.usdPrice),
+    usdValue: toNumber(native?.usdValue),
+    usdValue24h: toNumber(native?.usdValue24h),
     logo: native?.logo ?? null,
     isNative: true,
   };
-
-  const tokenResults = Array.isArray(tokens?.result) ? tokens.result : [];
 
   const tokenHoldings: MoralisTokenHolding[] = tokenResults.map((token) => ({
     chain,
@@ -164,9 +164,9 @@ async function fetchBalancesForChain(address: string, chain: string) {
     name: token.name ?? token.symbol ?? "Unknown Token",
     decimals: token.decimals ?? 18,
     balance: token.balance ?? "0",
-    usdPrice: toNumber(token.usd_price),
-    usdValue: toNumber(token.usd_value),
-    usdValue24h: toNumber(token.usd_value_24h),
+    usdPrice: toNumber(token.usdPrice),
+    usdValue: toNumber(token.usdValue),
+    usdValue24h: toNumber(token.usdValue24h),
     logo: token.logo ?? null,
     isNative: false,
   }));
@@ -223,6 +223,12 @@ async function fetchTransactionsForChain(address: string, chain: string, sinceIs
     });
 
     const txs = Array.isArray(data.result) ? data.result : [];
+
+    console.log("[Moralis] Transactions response", {
+      chain,
+      batchCount: txs.length,
+      cursor: data.cursor ?? null,
+    });
 
     txs.forEach((tx) => {
       items.push({ ...tx, chain });
