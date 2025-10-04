@@ -62,6 +62,7 @@ export type MoralisTokenHolding = {
   usdPrice: number | null;
   usdValue: number | null;
   usdValue24h?: number | null;
+  possibleSpam?: boolean;
   logo?: string | null;
   isNative: boolean;
 };
@@ -110,66 +111,64 @@ export async function fetchMoralisBalances(address: string) {
 
 async function fetchBalancesForChain(address: string, chain: string) {
   const data = await moralisFetch<{
-    nativeToken?: {
-      balance: string;
-      decimals?: number;
-      name?: string;
+    result?: Array<{
+      token_address?: string;
       symbol?: string;
-      logo?: string | null;
-      usdPrice?: number | string | null;
-      usdValue?: number | string | null;
-      usdValue24h?: number | string | null;
-    };
-    tokens?: Array<{
-      tokenAddress?: string;
       name?: string;
-      symbol?: string;
       logo?: string | null;
       decimals?: number;
       balance: string;
-      usdPrice?: number | string | null;
-      usdValue?: number | string | null;
-      usdValue24h?: number | string | null;
+      usd_price?: number | string | null;
+      usd_value?: number | string | null;
+      usd_value_24hr_usd_change?: number | string | null;
+      usd_value_24hr_percent_change?: number | string | null;
+      usd_price_24hr_usd_change?: number | string | null;
+      usd_price_24hr_percent_change?: number | string | null;
+      native_token?: boolean;
     }>;
   }>(`/wallets/${address}/tokens`, {
     chain,
     include: "erc20Metadata,usd",
   });
 
-  const native = data?.nativeToken;
-  const tokenResults = Array.isArray(data?.tokens) ? data.tokens : [];
+  const items = Array.isArray(data?.result) ? data.result : [];
 
   console.log("[Moralis] Wallet tokens response", {
     chain,
-    hasNative: Boolean(native),
-    tokenCount: tokenResults.length,
+    count: items.length,
   });
+
+  const nativeItem = items.find((item) => item.native_token);
 
   const nativeHolding: MoralisTokenHolding = {
     chain,
-    symbol: native?.symbol ?? chain.toUpperCase(),
-    name: native?.name ?? `${chain.toUpperCase()} Native`,
-    decimals: native?.decimals ?? 18,
-    balance: native?.balance ?? "0",
-    usdPrice: toNumber(native?.usdPrice),
-    usdValue: toNumber(native?.usdValue),
-    usdValue24h: toNumber(native?.usdValue24h),
-    logo: native?.logo ?? null,
+    symbol: nativeItem?.symbol ?? chain.toUpperCase(),
+    name: nativeItem?.name ?? `${chain.toUpperCase()} Native`,
+    decimals: nativeItem?.decimals ?? 18,
+    balance: nativeItem?.balance ?? "0",
+    usdPrice: toNumber(nativeItem?.usd_price),
+    usdValue: toNumber(nativeItem?.usd_value),
+    usdValue24h: toNumber(nativeItem?.usd_value_24hr_usd_change),
+    possibleSpam: nativeItem?.possible_spam ?? false,
+    logo: nativeItem?.logo ?? null,
     isNative: true,
   };
 
-  const tokenHoldings: MoralisTokenHolding[] = tokenResults.map((token) => ({
-    chain,
-    symbol: token.symbol ?? "UNKNOWN",
-    name: token.name ?? token.symbol ?? "Unknown Token",
-    decimals: token.decimals ?? 18,
-    balance: token.balance ?? "0",
-    usdPrice: toNumber(token.usdPrice),
-    usdValue: toNumber(token.usdValue),
-    usdValue24h: toNumber(token.usdValue24h),
-    logo: token.logo ?? null,
-    isNative: false,
-  }));
+  const tokenHoldings: MoralisTokenHolding[] = items
+    .filter((item) => !item.native_token)
+    .map((token) => ({
+      chain,
+      symbol: token.symbol ?? "UNKNOWN",
+      name: token.name ?? token.symbol ?? "Unknown Token",
+      decimals: token.decimals ?? 18,
+      balance: token.balance ?? "0",
+      usdPrice: toNumber(token.usd_price),
+      usdValue: toNumber(token.usd_value),
+      usdValue24h: toNumber(token.usd_value_24hr_usd_change),
+      possibleSpam: token.possible_spam ?? false,
+      logo: token.logo ?? null,
+      isNative: false,
+    }));
 
   return [nativeHolding, ...tokenHoldings];
 }

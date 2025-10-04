@@ -107,6 +107,15 @@ function buildTokens(holdings: MoralisTokenHolding[]): ExtendedAnalysisToken[] {
         return null;
       }
 
+      if (holding.isNative === false && holding.possibleSpam) {
+        console.warn("[Analyzer] Dropping possible spam token", {
+          chain: holding.chain,
+          symbol: holding.symbol,
+          valueUsd,
+        });
+        return null;
+      }
+
       const valueUsd24h = holding.usdValue24h ?? null;
       const change24h = valueUsd24h && valueUsd24h > VALUE_EPSILON ? ((valueUsd - valueUsd24h) / valueUsd24h) * 100 : 0;
 
