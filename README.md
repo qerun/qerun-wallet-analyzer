@@ -23,13 +23,13 @@ Open http://localhost:3000 to access the development build. Update `src/app/page
 Create an `.env.local` file to store API keys for blockchain indexers, pricing APIs, and RPC endpoints. Never commit real credentials.
 
 ```env
-COVALENT_API_KEY=your_api_key_here
-COVALENT_CHAIN_IDS=eth-mainnet,arbitrum-mainnet,optimism-mainnet
-# Optional: override the default Covalent API endpoint
-# COVALENT_API_BASE=https://api.covalenthq.com/v1
+MORALIS_API_KEY=your_api_key_here
+MORALIS_CHAINS=eth,arbitrum,optimism
+# Optional: override the default Moralis API endpoint
+# MORALIS_API_BASE=https://deep-index.moralis.io/api/v2.2
 ```
 
-Supplying the Covalent key unlocks live balance analytics at `/api/analyze` and six-month transaction history at `/api/history`. Without it, the dashboard falls back to demo data.
+Supplying the Moralis key unlocks live balance analytics at `/api/analyze` and six-month transaction history at `/api/history`. Without it, the dashboard falls back to demo data.
 
 ## Deployment
 

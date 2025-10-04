@@ -1,4 +1,4 @@
-import { fetchCovalentTransactions, CovalentConfigurationError } from "@/lib/providers/covalent";
+import { fetchMoralisTransactions, MoralisConfigurationError } from "@/lib/providers/moralis";
 
 export type WalletTransaction = {
   hash: string;
@@ -14,23 +14,23 @@ export type WalletTransaction = {
 };
 
 const CHAIN_METADATA: Record<string, { explorer: string; symbol: string }> = {
-  "eth-mainnet": {
+  eth: {
     explorer: "https://etherscan.io/tx/",
     symbol: "ETH",
   },
-  "matic-mainnet": {
+  polygon: {
     explorer: "https://polygonscan.com/tx/",
     symbol: "MATIC",
   },
-  "bsc-mainnet": {
+  bsc: {
     explorer: "https://bscscan.com/tx/",
     symbol: "BNB",
   },
-  "arbitrum-mainnet": {
+  arbitrum: {
     explorer: "https://arbiscan.io/tx/",
     symbol: "ETH",
   },
-  "optimism-mainnet": {
+  optimism: {
     explorer: "https://optimistic.etherscan.io/tx/",
     symbol: "ETH",
   },
@@ -40,9 +40,9 @@ const SIX_MONTHS = 6;
 
 export async function getWalletHistory(address: string) {
   try {
-    const covalentItems = await fetchCovalentTransactions(address, SIX_MONTHS);
+    const moralisItems = await fetchMoralisTransactions(address, SIX_MONTHS);
 
-    const normalized: WalletTransaction[] = covalentItems.map((item) => {
+    const normalized: WalletTransaction[] = moralisItems.map((item) => {
       const normalizedAddress = address.toLowerCase();
       const direction = item.to_address?.toLowerCase() === normalizedAddress
         ? "in"
@@ -50,24 +50,25 @@ export async function getWalletHistory(address: string) {
         ? "out"
         : "internal";
 
-      const chainMeta = CHAIN_METADATA[item.chain_name] ?? {
+      const chain = item.chain ?? "eth";
+      const chainMeta = CHAIN_METADATA[chain] ?? {
         explorer: "https://etherscan.io/tx/",
         symbol: "N/A",
       };
 
       return {
-        hash: item.tx_hash,
-        timestamp: item.block_signed_at,
+        hash: item.hash,
+        timestamp: item.block_timestamp,
         direction,
-        valueUsd: item.value_quote ?? null,
+        valueUsd: null,
         symbol: chainMeta.symbol,
         counterparty:
           direction === "in"
             ? item.from_address_label ?? item.from_address
             : item.to_address_label ?? item.to_address ?? undefined,
-        chain: item.chain_name,
-        gasFeeUsd: item.gas_quote ?? null,
-        explorerUrl: `${chainMeta.explorer}${item.tx_hash}`,
+        chain,
+        gasFeeUsd: null,
+        explorerUrl: `${chainMeta.explorer}${item.hash}`,
       };
     });
 
@@ -75,89 +76,15 @@ export async function getWalletHistory(address: string) {
 
     return {
       history: normalized,
-      source: "covalent",
+      source: "moralis",
       isFallback: false,
     };
   } catch (error) {
-    if (error instanceof CovalentConfigurationError) {
-      return {
-        history: fallbackHistory(),
-        source: "demo",
-        isFallback: true,
-      };
+    console.error("Failed to fetch wallet history", error);
+    if (error instanceof MoralisConfigurationError) {
+      throw new Error("Moralis API key is missing or invalid");
     }
 
-    console.error("Failed to fetch wallet history", error);
-    return {
-      history: fallbackHistory(),
-      source: "error",
-      isFallback: true,
-    };
+    throw error instanceof Error ? error : new Error("Failed to fetch wallet history");
   }
-}
-
-function fallbackHistory(): WalletTransaction[] {
-  const now = new Date();
-  const items = [
-    {
-      hash: "0x-demo-reward",
-      timestamp: new Date(now.getTime() - 1000 * 60 * 60 * 24 * 15).toISOString(),
-      direction: "in" as const,
-      valueUsd: 1820,
-      symbol: "ETH",
-      counterparty: "Reward Vault",
-      chain: "eth-mainnet",
-      gasFeeUsd: 4.32,
-      explorerUrl: "https://etherscan.io/tx/0x-demo-reward",
-    },
-    {
-      hash: "0x-demo-stable-swap",
-      timestamp: new Date(now.getTime() - 1000 * 60 * 60 * 24 * 32).toISOString(),
-      direction: "out" as const,
-      valueUsd: 9500,
-      symbol: "USDC",
-      counterparty: "Curve.fi",
-      chain: "eth-mainnet",
-      gasFeeUsd: 3.1,
-      explorerUrl: "https://etherscan.io/tx/0x-demo-stable-swap",
-    },
-    {
-      hash: "0x-demo-bridge",
-      timestamp: new Date(now.getTime() - 1000 * 60 * 60 * 24 * 60).toISOString(),
-      direction: "out" as const,
-      valueUsd: 12000,
-      symbol: "ETH",
-      counterparty: "Arbitrum Bridge",
-      chain: "arbitrum-mainnet",
-      gasFeeUsd: 1.6,
-      explorerUrl: "https://arbiscan.io/tx/0x-demo-bridge",
-    },
-    {
-      hash: "0x-demo-quest",
-      timestamp: new Date(now.getTime() - 1000 * 60 * 60 * 24 * 95).toISOString(),
-      direction: "in" as const,
-      valueUsd: 4500,
-      symbol: "OP",
-      counterparty: "Optimism Quest",
-      chain: "optimism-mainnet",
-      gasFeeUsd: 0.9,
-      explorerUrl: "https://optimistic.etherscan.io/tx/0x-demo-quest",
-    },
-  ];
-
-  return items
-    .concat(
-      {
-        hash: "0x-demo-airdrop",
-        timestamp: new Date(now.getTime() - 1000 * 60 * 60 * 24 * 128).toISOString(),
-        direction: "in" as const,
-        valueUsd: 3200,
-        symbol: "ARB",
-        counterparty: "Airdrop",
-        chain: "arbitrum-mainnet",
-        gasFeeUsd: 0.75,
-        explorerUrl: "https://arbiscan.io/tx/0x-demo-airdrop",
-      }
-    )
-    .sort((a, b) => (a.timestamp > b.timestamp ? -1 : 1));
 }

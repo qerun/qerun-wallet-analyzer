@@ -1,10 +1,8 @@
 import {
-  CovalentConfigurationError,
-  CovalentBalanceItem,
-  CovalentPortfolioPoint,
-  fetchCovalentBalances,
-  fetchCovalentPortfolio,
-} from "@/lib/providers/covalent";
+  MoralisConfigurationError,
+  MoralisTokenHolding,
+  fetchMoralisBalances,
+} from "@/lib/providers/moralis";
 
 export type AnalysisSummary = {
   netWorth: number;
@@ -39,6 +37,8 @@ export type WalletAnalysis = {
   };
 };
 
+type ExtendedAnalysisToken = AnalysisToken & { valueUsd24h?: number | null };
+
 const STABLE_SYMBOLS = new Set([
   "USDC",
   "USDT",
@@ -60,33 +60,13 @@ const VALUE_EPSILON = 0.0001;
 
 export async function analyzeWallet(address: string): Promise<WalletAnalysis> {
   try {
-    const [balances, portfolioPoints] = await Promise.all([
-      fetchCovalentBalances(address),
-      fetchCovalentPortfolio(address, 30),
-    ]);
-
-    const flatBalances = balances.flatMap((result) =>
-      result.items.map((item) => ({ item, chain: result.chain }))
-    );
-
-    const tokens = buildTokens(flatBalances);
+    const holdings = await fetchMoralisBalances(address);
+    const tokens = buildTokens(holdings);
     const netWorth = tokens.reduce((acc, token) => acc + token.valueUsd, 0);
 
-    const netWorth24h = flatBalances.reduce((acc, { item }) => {
-      const value24h = item.quote_24h ?? item.quote ?? 0;
-      return acc + (value24h ?? 0);
-    }, 0);
-
-    let netWorthChange = netWorth - netWorth24h;
-    let netWorthChangePct = netWorth24h > VALUE_EPSILON ? (netWorthChange / netWorth24h) * 100 : 0;
-
-    const netWorthHistory = aggregateNetWorthHistory(portfolioPoints);
-    if (netWorthHistory.length > 1) {
-      const latest = netWorthHistory[netWorthHistory.length - 1]?.value ?? netWorth;
-      const previous = netWorthHistory[netWorthHistory.length - 2]?.value ?? latest;
-      netWorthChange = latest - previous;
-      netWorthChangePct = previous > VALUE_EPSILON ? (netWorthChange / previous) * 100 : 0;
-    }
+    const netWorth24h = tokens.reduce((acc, token) => acc + ((token as ExtendedAnalysisToken).valueUsd24h ?? token.valueUsd), 0);
+    const netWorthChange = netWorth - netWorth24h;
+    const netWorthChangePct = netWorth24h > VALUE_EPSILON ? (netWorthChange / netWorth24h) * 100 : 0;
 
     const riskLevel = computeRisk(tokens);
     const insights = buildInsights(tokens, netWorth, netWorthChange, netWorthChangePct, riskLevel);
@@ -105,39 +85,42 @@ export async function analyzeWallet(address: string): Promise<WalletAnalysis> {
       tokens,
       insights,
       meta: {
-        source: "covalent",
+        source: "moralis",
         isFallback: false,
       },
     };
   } catch (error) {
-    if (error instanceof CovalentConfigurationError) {
-      return fallbackAnalysis();
+    console.error("analyzeWallet failed", error);
+    if (error instanceof MoralisConfigurationError) {
+      throw new Error("Moralis API key is missing or invalid");
     }
 
-    console.error("analyzeWallet failed", error);
-    return fallbackAnalysis();
+    throw error instanceof Error ? error : new Error("Failed to analyze wallet");
   }
 }
 
-function buildTokens(entries: Array<{ item: CovalentBalanceItem; chain: string }>): AnalysisToken[] {
-  const tokens = entries
-    .map(({ item, chain }) => {
-      const symbol = item.contract_ticker_symbol ?? item.contract_name ?? "Unknown";
-      const valueUsd = item.quote ?? 0;
+function buildTokens(holdings: MoralisTokenHolding[]): ExtendedAnalysisToken[] {
+  const tokens = holdings
+    .map((holding) => {
+      const valueUsd = deriveUsdValue(holding);
       if (valueUsd < VALUE_EPSILON) {
         return null;
       }
-      const value24h = item.quote_24h ?? item.quote ?? 0;
-      const change24h = value24h > VALUE_EPSILON ? ((valueUsd - value24h) / value24h) * 100 : 0;
-      return {
-        symbol,
-        protocol: chain,
+
+      const valueUsd24h = holding.usdValue24h ?? null;
+      const change24h = valueUsd24h && valueUsd24h > VALUE_EPSILON ? ((valueUsd - valueUsd24h) / valueUsd24h) * 100 : 0;
+
+      const entry: ExtendedAnalysisToken = {
+        symbol: holding.symbol,
+        protocol: holding.chain,
         valueUsd,
         change24h,
         allocationPct: 0,
+        valueUsd24h,
       };
+      return entry;
     })
-    .filter((token): token is AnalysisToken => token !== null)
+    .filter((token): token is ExtendedAnalysisToken => token !== null)
     .sort((a, b) => b.valueUsd - a.valueUsd);
 
   const total = tokens.reduce((acc, token) => acc + token.valueUsd, 0);
@@ -148,6 +131,19 @@ function buildTokens(entries: Array<{ item: CovalentBalanceItem; chain: string }
   }
 
   return tokens;
+}
+
+function deriveUsdValue(holding: MoralisTokenHolding) {
+  if (holding.usdValue != null) {
+    return holding.usdValue;
+  }
+  if (holding.usdPrice != null) {
+    const decimals = holding.decimals ?? 18;
+    const decimalFactor = Math.pow(10, decimals);
+    const amount = Number.parseFloat(holding.balance ?? "0") / decimalFactor;
+    return amount * holding.usdPrice;
+  }
+  return 0;
 }
 
 function computeRisk(tokens: AnalysisToken[]): AnalysisSummary["riskLevel"] {
@@ -244,62 +240,6 @@ function buildInsights(
   });
 
   return insights;
-}
-
-function aggregateNetWorthHistory(points: CovalentPortfolioPoint[]) {
-  const aggregated = new Map<string, number>();
-
-  points.forEach((point) => {
-    aggregated.set(point.timestamp, (aggregated.get(point.timestamp) ?? 0) + point.value);
-  });
-
-  return Array.from(aggregated.entries())
-    .map(([timestamp, value]) => ({ timestamp, value }))
-    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-}
-
-function fallbackAnalysis(): WalletAnalysis {
-  return {
-    summary: {
-      netWorth: 128530,
-      netWorthChange: 2640,
-      netWorthChangePct: 2.08,
-      realizedPnl: 48210,
-      realizedPnlPct: 37.2,
-      riskLevel: "Moderate",
-    },
-    tokens: [
-      { symbol: "ETH", protocol: "eth-mainnet", valueUsd: 45210, change24h: 1.82, allocationPct: 35.2 },
-      { symbol: "USDC", protocol: "arbitrum-mainnet", valueUsd: 31180, change24h: 0.1, allocationPct: 24.3 },
-      { symbol: "stETH", protocol: "eth-mainnet", valueUsd: 25560, change24h: 1.32, allocationPct: 19.9 },
-      { symbol: "OP", protocol: "optimism-mainnet", valueUsd: 10840, change24h: -0.6, allocationPct: 8.4 },
-      { symbol: "GHO", protocol: "eth-mainnet", valueUsd: 7400, change24h: 0.5, allocationPct: 5.8 },
-    ],
-    insights: [
-      {
-        title: "Stablecoin buffer is healthy",
-        detail:
-          "24% of holdings sit in USDC and GHO, giving you 8 months of runway at the current 30-day average outflow. Maintain at least 18% to cover DAO commitments.",
-        tone: "positive",
-      },
-      {
-        title: "Rebalance stETH exposure",
-        detail:
-          "stETH now represents 20% of assets after recent appreciation. Consider shifting 3-5% back into liquid ETH or USDC to keep staking risk within policy.",
-        tone: "warning",
-      },
-      {
-        title: "Governance participation opportunity",
-        detail:
-          "OP voting rewards are live this epoch. Delegating 40% of your OP position could earn an estimated 8% APR while reinforcing Optimism governance goals.",
-        tone: "neutral",
-      },
-    ],
-    meta: {
-      source: "demo",
-      isFallback: true,
-    },
-  };
 }
 
 function formatNumber(value: number) {
