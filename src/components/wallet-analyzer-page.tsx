@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -33,6 +33,26 @@ type AnalyzeResponse = {
   insights: Insight[];
 };
 
+type WalletHistoryItem = {
+  hash: string;
+  timestamp: string;
+  direction: "in" | "out" | "internal";
+  valueUsd: number | null;
+  symbol?: string | null;
+  counterparty?: string | null;
+  chain: string;
+  gasFeeUsd: number | null;
+  explorerUrl?: string;
+};
+
+type HistoryResponse = {
+  history: WalletHistoryItem[];
+  meta?: {
+    source?: string;
+    isFallback?: boolean;
+  };
+};
+
 const currency = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
@@ -44,11 +64,27 @@ const percentage = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2,
 });
 
+const currencyDetailed = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 2,
+});
+
+const dateTime = new Intl.DateTimeFormat("en-US", {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
 export default function WalletAnalyzerPage() {
   const [address, setAddress] = useState("");
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeAddress, setActiveAddress] = useState<string | null>(null);
+  const [history, setHistory] = useState<WalletHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyMeta, setHistoryMeta] = useState<HistoryResponse["meta"] | null>(null);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -60,17 +96,67 @@ export default function WalletAnalyzerPage() {
 
     setIsLoading(true);
     setError(null);
+    setResult(null);
+    setHistory([]);
+    setHistoryError(null);
+    setHistoryMeta(null);
 
     try {
       const data = await mockAnalyze(trimmed);
       setResult(data);
+      setActiveAddress(trimmed);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to analyze wallet right now");
       setResult(null);
+      setActiveAddress(null);
     } finally {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!activeAddress) {
+      setHistory([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadHistory = async () => {
+      setHistoryLoading(true);
+      setHistoryError(null);
+
+      try {
+        const response = await fetch(`/api/history?address=${encodeURIComponent(activeAddress)}`);
+        if (!response.ok) {
+          throw new Error(`History request failed (${response.status})`);
+        }
+
+        const payload = (await response.json()) as HistoryResponse;
+
+        if (!cancelled) {
+          setHistory(payload.history ?? []);
+          setHistoryMeta(payload.meta ?? null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setHistory([]);
+          setHistoryMeta(null);
+          setHistoryError(err instanceof Error ? err.message : "Unable to fetch history");
+        }
+      } finally {
+        if (!cancelled) {
+          setHistoryLoading(false);
+        }
+      }
+    };
+
+    loadHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeAddress]);
 
   const statusPill = useMemo(() => {
     if (isLoading) {
@@ -149,6 +235,12 @@ export default function WalletAnalyzerPage() {
         <SummarySection summary={result?.summary} loading={isLoading} />
         <HoldingsSection tokens={result?.tokens ?? []} loading={isLoading} />
         <InsightsSection insights={result?.insights ?? []} loading={isLoading} />
+        <HistorySection
+          history={history}
+          loading={historyLoading}
+          error={historyError}
+          meta={historyMeta}
+        />
       </main>
 
       <footer className="border-t border-[#f7d976]/20 bg-[#0c0503]/90 py-6">
@@ -341,6 +433,90 @@ function InsightsSection({ insights, loading }: { insights: Insight[]; loading: 
   );
 }
 
+function HistorySection({
+  history,
+  loading,
+  error,
+  meta,
+}: {
+  history: WalletHistoryItem[];
+  loading: boolean;
+  error: string | null;
+  meta: HistoryResponse["meta"] | null;
+}) {
+  return (
+    <section className="rounded-3xl border border-[#f7d976]/20 bg-[#1a0906]/80 p-8 shadow-[0_20px_40px_rgba(0,0,0,0.35)] backdrop-blur">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-white">Recent Activity (6 months)</h2>
+          <p className="mt-1 text-sm text-[#d4c49b]">
+            On-chain transfers and interactions across configured networks. Values are converted to USD at execution time.
+          </p>
+        </div>
+        {meta?.isFallback ? (
+          <span className="inline-flex items-center rounded-full border border-[#f7d976]/30 bg-[#120806]/70 px-3 py-1 text-xs text-[#f7d976]">
+            Using sample data — add API keys to enable live history
+          </span>
+        ) : meta?.source ? (
+          <span className="inline-flex items-center rounded-full border border-[#f7d976]/30 bg-[#120806]/70 px-3 py-1 text-xs text-[#cdbd8b]">
+            Powered by {meta.source}
+          </span>
+        ) : null}
+      </div>
+
+      {error ? (
+        <div className="mt-4 rounded-2xl border border-[#f9a9a9]/40 bg-[#2d0e0e]/70 p-4 text-sm text-[#f9a9a9]">
+          {error}
+        </div>
+      ) : null}
+
+      <div className="mt-6 space-y-4">
+        {loading ? (
+          <HistorySkeleton />
+        ) : history.length === 0 ? (
+          <EmptyState message="No on-chain activity detected over the last six months." />
+        ) : (
+          history.slice(0, 12).map((tx) => (
+            <article
+              key={`${tx.hash}-${tx.timestamp}`}
+              className="grid gap-4 rounded-2xl border border-[#f7d976]/25 bg-[#120806]/75 p-5 shadow-[0_12px_32px_rgba(0,0,0,0.25)] md:grid-cols-[minmax(0,0.9fr)_1fr_auto]"
+            >
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-[#cdbd8b]">
+                  {dateTime.format(new Date(tx.timestamp))}
+                </p>
+                <p className="mt-2 text-2xl font-semibold text-white">{formatHistoryValue(tx.valueUsd)}</p>
+              </div>
+              <div className="space-y-2 text-sm text-[#eadfb7]">
+                <p className="font-medium text-[#f7d976]">{directionLabel(tx.direction)}</p>
+                <p>
+                  {formatCounterparty(tx.direction, tx.counterparty)}
+                  <span className="ml-2 text-xs text-[#cdbd8b]">{tx.chain}</span>
+                </p>
+                <p className="text-xs text-[#cdbd8b]">
+                  Gas paid: {tx.gasFeeUsd != null ? currencyDetailed.format(tx.gasFeeUsd) : "—"}
+                </p>
+              </div>
+              <div className="flex items-end justify-end">
+                {tx.explorerUrl ? (
+                  <a
+                    className="inline-flex items-center gap-2 rounded-full border border-[#f7d976]/40 px-4 py-2 text-xs font-semibold text-[#f7d976] transition hover:border-[#f7d976] hover:text-[#f9e7a9]"
+                    href={tx.explorerUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    View Tx
+                  </a>
+                ) : null}
+              </div>
+            </article>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
 function badgeColor(tone: Insight["tone"]) {
   switch (tone) {
     case "positive":
@@ -400,6 +576,48 @@ function EmptyState({ message }: { message: string }) {
       {message}
     </div>
   );
+}
+
+function HistorySkeleton() {
+  return (
+    <div className="space-y-4">
+      {[0, 1, 2].map((key) => (
+        <div key={key} className="animate-pulse rounded-2xl border border-[#f7d976]/15 bg-[#120806]/70 p-5">
+          <div className="h-3 w-32 rounded bg-[#f7d976]/20" />
+          <div className="mt-4 h-6 w-40 rounded bg-[#f7d976]/15" />
+          <div className="mt-4 h-3 w-full rounded bg-[#f7d976]/12" />
+          <div className="mt-2 h-3 w-2/3 rounded bg-[#f7d976]/10" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function formatHistoryValue(value: number | null) {
+  if (value == null) {
+    return "—";
+  }
+  return currencyDetailed.format(value);
+}
+
+function directionLabel(direction: WalletHistoryItem["direction"]) {
+  switch (direction) {
+    case "in":
+      return "Inbound transfer";
+    case "out":
+      return "Outbound transfer";
+    default:
+      return "Internal movement";
+  }
+}
+
+function formatCounterparty(direction: WalletHistoryItem["direction"], counterparty?: string | null) {
+  if (!counterparty) {
+    return direction === "in" ? "From unknown counterparty" : direction === "out" ? "To unknown counterparty" : "Self interaction";
+  }
+
+  const normalized = counterparty.length > 24 ? `${counterparty.slice(0, 10)}…${counterparty.slice(-6)}` : counterparty;
+  return direction === "in" ? `From ${normalized}` : direction === "out" ? `To ${normalized}` : `Self: ${normalized}`;
 }
 
 // Temporary stub to mimic the AI + data pipeline until backend routes are wired up.
