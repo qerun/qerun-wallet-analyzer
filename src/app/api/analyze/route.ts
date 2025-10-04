@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyzeWallet, type WalletAnalysis } from "@/lib/analyze-wallet";
+import { resolveAddress, AddressResolutionError } from "@/lib/resolve-address";
 import { applyRateLimit, denyRateLimit } from "@/app/api/_utils/rate-limit";
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -18,10 +19,20 @@ type AnalyzeCacheEntry = {
 const analyzeCache = new Map<string, AnalyzeCacheEntry>();
 
 export async function GET(request: NextRequest) {
-  const address = request.nextUrl.searchParams.get("address");
+  const requestedAddress = request.nextUrl.searchParams.get("address");
 
-  if (!address) {
+  if (!requestedAddress) {
     return NextResponse.json({ error: "address is required" }, { status: 400 });
+  }
+
+  let address: string;
+  try {
+    address = await resolveAddress(requestedAddress);
+  } catch (error) {
+    if (error instanceof AddressResolutionError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    throw error;
   }
 
   const rate = applyRateLimit(request, {
