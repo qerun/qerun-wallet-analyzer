@@ -131,6 +131,8 @@ async function fetchBalancesForChain(address: string, chain: string) {
       usd_price_24hr_usd_change?: number | string | null;
       usd_price_24hr_percent_change?: number | string | null;
       native_token?: boolean;
+      possible_spam?: boolean;
+      verified_contract?: boolean;
     }>;
   }>(`/wallets/${address}/tokens`, {
     chain,
