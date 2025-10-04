@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Unable to retrieve wallet history", error);
-    return NextResponse.json({ error: "failed to retrieve wallet history" }, { status: 500 });
+    const message = error instanceof Error ? error.message : "failed to retrieve wallet history";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

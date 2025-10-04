@@ -309,11 +309,11 @@ function SummarySection({
         <h2 className="text-xl font-semibold text-white">Portfolio Summary</h2>
         {meta?.isFallback ? (
           <span className="inline-flex items-center rounded-full border border-[#f7d976]/30 bg-[#120806]/70 px-3 py-1 text-xs text-[#f7d976]">
-            Demo data — add API keys for live balances
+            Live data unavailable — check API credentials
           </span>
         ) : meta?.source ? (
           <span className="inline-flex items-center rounded-full border border-[#f7d976]/25 bg-[#120806]/70 px-3 py-1 text-xs text-[#cdbd8b]">
-            Powered by {meta.source}
+            Powered by {formatDataSource(meta.source)}
           </span>
         ) : null}
       </div>
@@ -485,11 +485,11 @@ function HistorySection({
         </div>
         {meta?.isFallback ? (
           <span className="inline-flex items-center rounded-full border border-[#f7d976]/30 bg-[#120806]/70 px-3 py-1 text-xs text-[#f7d976]">
-            Using sample data — add API keys to enable live history
+            History unavailable — verify provider access
           </span>
         ) : meta?.source ? (
           <span className="inline-flex items-center rounded-full border border-[#f7d976]/30 bg-[#120806]/70 px-3 py-1 text-xs text-[#cdbd8b]">
-            Powered by {meta.source}
+            Powered by {formatDataSource(meta.source)}
           </span>
         ) : null}
       </div>
@@ -628,6 +628,13 @@ function formatHistoryValue(value: number | null) {
     return "—";
   }
   return currencyDetailed.format(value);
+}
+
+function formatDataSource(source: string) {
+  if (!source) {
+    return "";
+  }
+  return source.charAt(0).toUpperCase() + source.slice(1);
 }
 
 function directionLabel(direction: WalletHistoryItem["direction"]) {

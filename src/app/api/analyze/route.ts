@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Unable to analyze wallet", error);
-    return NextResponse.json({ error: "failed to analyze wallet" }, { status: 500 });
+    const message = error instanceof Error ? error.message : "failed to analyze wallet";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
