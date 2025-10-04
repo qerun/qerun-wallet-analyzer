@@ -5,7 +5,7 @@ export type WalletTransaction = {
   timestamp: string;
   direction: "in" | "out" | "internal";
   valueUsd: number | null;
-  amount?: number | null;
+  amount: number | null;
   symbol?: string | null;
   counterparty?: string | null;
   chain: string;
@@ -34,6 +34,14 @@ const CHAIN_METADATA: Record<string, { explorer: string; symbol: string }> = {
     explorer: "https://optimistic.etherscan.io/tx/",
     symbol: "ETH",
   },
+}; 
+
+const CHAIN_DECIMALS: Record<string, number> = {
+  eth: 18,
+  polygon: 18,
+  bsc: 18,
+  arbitrum: 18,
+  optimism: 18,
 };
 
 const HISTORY_LOOKBACK_DAYS = 14;
@@ -58,7 +66,7 @@ export async function getWalletHistory(address: string) {
 
       const valueUsd = toNumber(item.usd_value);
       const gasFeeUsd = toNumber(item.fee?.usd_value);
-      const amount = item.value_decimal ? Number.parseFloat(item.value_decimal) : undefined;
+      const amount = resolveAmount(item, chain);
 
       return {
         hash: item.hash,
@@ -103,4 +111,30 @@ function toNumber(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
+}
+
+function resolveAmount(
+  item: MoralisTransaction,
+  chain: string,
+): number | null {
+  if (item.value_decimal) {
+    const parsed = Number.parseFloat(item.value_decimal);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+
+  const wei = item.value;
+  if (!wei) {
+    return null;
+  }
+
+  const decimals = CHAIN_DECIMALS[chain] ?? 18;
+  const divisor = Math.pow(10, decimals);
+  const asNumber = Number(wei);
+  if (!Number.isFinite(asNumber)) {
+    return null;
+  }
+
+  return asNumber / divisor;
 }
