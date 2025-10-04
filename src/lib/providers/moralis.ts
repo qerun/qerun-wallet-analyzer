@@ -76,8 +76,13 @@ export type MoralisTransaction = {
   from_address_label?: string | null;
   to_address_label?: string | null;
   value: string;
+  value_decimal?: string | null;
+  usd_value?: number | string | null;
   gas_price?: string | null;
   receipt_gas_used?: string | null;
+  fee?: {
+    usd_value?: number | string | null;
+  };
   block_timestamp: string;
   chain?: string;
 };
@@ -215,12 +220,13 @@ async function fetchTransactionsForChain(address: string, chain: string, sinceIs
     const data = await moralisFetch<{
       result: MoralisTransaction[];
       cursor?: string | null;
-    }>(`/${address}`, {
+    }>(`/wallets/${address}/transactions`, {
       chain,
       limit: "100",
       order: "desc",
       from_date: sinceIso,
       cursor,
+      include: "usd",
     });
 
     const txs = Array.isArray(data.result) ? data.result : [];

@@ -56,18 +56,23 @@ export async function getWalletHistory(address: string) {
         symbol: "N/A",
       };
 
+      const valueUsd = toNumber(item.usd_value);
+      const gasFeeUsd = toNumber(item.fee?.usd_value);
+      const amount = item.value_decimal ? Number.parseFloat(item.value_decimal) : undefined;
+
       return {
         hash: item.hash,
         timestamp: item.block_timestamp,
         direction,
-        valueUsd: null,
+        valueUsd,
+        amount,
         symbol: chainMeta.symbol,
         counterparty:
           direction === "in"
             ? item.from_address_label ?? item.from_address
             : item.to_address_label ?? item.to_address ?? undefined,
         chain,
-        gasFeeUsd: null,
+        gasFeeUsd,
         explorerUrl: `${chainMeta.explorer}${item.hash}`,
       };
     });
@@ -87,4 +92,15 @@ export async function getWalletHistory(address: string) {
 
     throw error instanceof Error ? error : new Error("Failed to fetch wallet history");
   }
+}
+
+function toNumber(value: unknown): number | null {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }

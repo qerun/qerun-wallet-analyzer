@@ -478,7 +478,7 @@ function HistorySection({
     <section className="rounded-3xl border border-[#f7d976]/20 bg-[#1a0906]/80 p-8 shadow-[0_20px_40px_rgba(0,0,0,0.35)] backdrop-blur">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-white">Recent Activity (6 months)</h2>
+          <h2 className="text-xl font-semibold text-white">Recent Activity</h2>
           <p className="mt-1 text-sm text-[#d4c49b]">
             On-chain transfers and interactions across configured networks. Values are converted to USD at execution time.
           </p>
