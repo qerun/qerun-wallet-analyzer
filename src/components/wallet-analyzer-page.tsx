@@ -1,8 +1,9 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 type SummaryMetrics = {
   netWorth: number;
@@ -28,6 +29,7 @@ type Insight = {
 };
 
 type AnalyzeResponse = {
+  address?: string;
   summary: SummaryMetrics;
   tokens: TokenBreakdown[];
   insights: Insight[];
@@ -50,6 +52,7 @@ type WalletHistoryItem = {
 };
 
 type HistoryResponse = {
+  address?: string;
   history: WalletHistoryItem[];
   meta?: {
     source?: string;
@@ -79,8 +82,9 @@ const dateTime = new Intl.DateTimeFormat("en-US", {
   timeStyle: "short",
 });
 
-export default function WalletAnalyzerPage() {
-  const [address, setAddress] = useState("");
+export default function WalletAnalyzerPage({ initialAddress = "" }: { initialAddress?: string }) {
+  const router = useRouter();
+  const [address, setAddress] = useState(initialAddress);
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
   const [analysisMeta, setAnalysisMeta] = useState<AnalyzeResponse["meta"] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -91,36 +95,61 @@ export default function WalletAnalyzerPage() {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [historyMeta, setHistoryMeta] = useState<HistoryResponse["meta"] | null>(null);
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const trimmed = address.trim();
-    if (!trimmed) {
-      setError("Enter a wallet or ENS");
+  const analyzeAddress = useCallback(
+    async (input: string) => {
+      const trimmed = input.trim();
+      setAddress(trimmed);
+
+      if (!trimmed) {
+        setError("Enter a wallet or ENS");
+        return;
+      }
+
+      setIsLoading(true);
+      setError(null);
+      setResult(null);
+      setAnalysisMeta(null);
+      setHistory([]);
+      setHistoryError(null);
+      setHistoryMeta(null);
+
+      try {
+        const data = await fetchAnalysis(trimmed);
+        const normalizedAddress = data.address ?? trimmed;
+
+        setAddress(normalizedAddress);
+        setResult(data);
+        setAnalysisMeta(data.meta ?? null);
+        setActiveAddress(normalizedAddress);
+        router.replace(`/${encodeURIComponent(normalizedAddress)}`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to analyze wallet right now");
+        setResult(null);
+        setAnalysisMeta(null);
+        setActiveAddress(null);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [router],
+  );
+
+  const handleSubmit = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      analyzeAddress(address);
+    },
+    [address, analyzeAddress],
+  );
+
+  useEffect(() => {
+    if (!initialAddress) {
       return;
     }
 
-    setIsLoading(true);
-    setError(null);
-    setResult(null);
-    setAnalysisMeta(null);
-    setHistory([]);
-    setHistoryError(null);
-    setHistoryMeta(null);
-
-    try {
-      const data = await fetchAnalysis(trimmed);
-      setResult(data);
-      setAnalysisMeta(data.meta ?? null);
-      setActiveAddress(trimmed);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to analyze wallet right now");
-      setResult(null);
-      setAnalysisMeta(null);
-      setActiveAddress(null);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    setAddress(initialAddress);
+    analyzeAddress(initialAddress);
+  }, [initialAddress, analyzeAddress]);
 
   useEffect(() => {
     if (!activeAddress) {
