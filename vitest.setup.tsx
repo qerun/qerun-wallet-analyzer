@@ -8,7 +8,7 @@ type NextImageProps = React.ComponentProps<"img"> & {
 };
 
 type NextLinkProps = React.ComponentProps<"a"> & {
-  href: string | { pathname: string };
+  href: string | URL | { pathname?: string };
   children: React.ReactNode;
 };
 
@@ -20,7 +20,20 @@ vi.mock("next/image", () => ({
 
 vi.mock("next/link", () => ({
   default: ({ children, href, ...rest }: NextLinkProps) => {
-    const resolvedHref = typeof href === "string" ? href : href.pathname;
+    let resolvedHref = "#";
+
+    if (typeof href === "string") {
+      resolvedHref = href;
+    } else if (href && typeof href === "object") {
+      const candidate = href as { pathname?: unknown; toString?: () => string };
+
+      if (typeof candidate.pathname === "string" && candidate.pathname.length > 0) {
+        resolvedHref = candidate.pathname;
+      } else if (typeof candidate.toString === "function") {
+        resolvedHref = candidate.toString();
+      }
+    }
+
     return (
       <a href={resolvedHref} {...rest}>
         {children}
