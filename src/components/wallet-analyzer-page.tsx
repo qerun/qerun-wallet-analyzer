@@ -46,6 +46,7 @@ type WalletHistoryItem = {
   timestamp: string;
   direction: "in" | "out" | "internal";
   valueUsd: number | null;
+  amount?: number | null;
   symbol?: string | null;
   counterparty?: string | null;
   chain: string;

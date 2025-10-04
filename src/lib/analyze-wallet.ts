@@ -19,6 +19,8 @@ export type AnalysisToken = {
   valueUsd: number;
   change24h: number;
   allocationPct: number;
+  amount: number;
+  decimals: number;
 };
 
 export type AnalysisInsight = {
@@ -136,12 +138,17 @@ function buildTokens(holdings: MoralisTokenHolding[]): ExtendedAnalysisToken[] {
       const valueUsd24h = holding.usdValue24h ?? null;
       const change24h = valueUsd24h && valueUsd24h > VALUE_EPSILON ? ((valueUsd - valueUsd24h) / valueUsd24h) * 100 : 0;
 
+      const decimals = holding.decimals ?? 18;
+      const amount = parseTokenAmount(holding.balance ?? "0", decimals);
+
       const entry: ExtendedAnalysisToken = {
         symbol: holding.symbol,
         protocol: holding.chain,
         valueUsd,
         change24h,
         allocationPct: 0,
+        amount,
+        decimals,
         valueUsd24h,
       };
       return entry;
@@ -159,14 +166,18 @@ function buildTokens(holdings: MoralisTokenHolding[]): ExtendedAnalysisToken[] {
   return tokens;
 }
 
+function parseTokenAmount(balance: string, decimals: number) {
+  const decimalFactor = Math.pow(10, decimals);
+  return Number.parseFloat(balance ?? "0") / decimalFactor;
+}
+
 function deriveUsdValue(holding: MoralisTokenHolding) {
   if (holding.usdValue != null) {
     return holding.usdValue;
   }
   if (holding.usdPrice != null) {
     const decimals = holding.decimals ?? 18;
-    const decimalFactor = Math.pow(10, decimals);
-    const amount = Number.parseFloat(holding.balance ?? "0") / decimalFactor;
+    const amount = parseTokenAmount(holding.balance ?? "0", decimals);
     return amount * holding.usdPrice;
   }
   return 0;
