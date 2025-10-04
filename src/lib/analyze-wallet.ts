@@ -57,6 +57,8 @@ const STABLE_SYMBOLS = new Set([
 ]);
 
 const VALUE_EPSILON = 0.0001;
+const MAX_UNVERIFIED_TOKEN_VALUE = 10_000;
+const MAX_UNIT_PRICE_FOR_UNVERIFIED = 5_000;
 
 export async function analyzeWallet(address: string): Promise<WalletAnalysis> {
   try {
@@ -112,6 +114,21 @@ function buildTokens(holdings: MoralisTokenHolding[]): ExtendedAnalysisToken[] {
           chain: holding.chain,
           symbol: holding.symbol,
           valueUsd,
+        });
+        return null;
+      }
+
+      if (
+        holding.isNative === false &&
+        holding.verifiedContract === false &&
+        (valueUsd > MAX_UNVERIFIED_TOKEN_VALUE ||
+          (holding.usdPrice != null && holding.usdPrice > MAX_UNIT_PRICE_FOR_UNVERIFIED))
+      ) {
+        console.warn("[Analyzer] Dropping unverified high value token", {
+          chain: holding.chain,
+          symbol: holding.symbol,
+          valueUsd,
+          usdPrice: holding.usdPrice,
         });
         return null;
       }

@@ -63,6 +63,7 @@ export type MoralisTokenHolding = {
   usdValue: number | null;
   usdValue24h?: number | null;
   possibleSpam?: boolean;
+  verifiedContract?: boolean;
   logo?: string | null;
   isNative: boolean;
 };
@@ -150,6 +151,7 @@ async function fetchBalancesForChain(address: string, chain: string) {
     usdValue: toNumber(nativeItem?.usd_value),
     usdValue24h: toNumber(nativeItem?.usd_value_24hr_usd_change),
     possibleSpam: nativeItem?.possible_spam ?? false,
+    verifiedContract: nativeItem?.verified_contract ?? true,
     logo: nativeItem?.logo ?? null,
     isNative: true,
   };
@@ -166,6 +168,7 @@ async function fetchBalancesForChain(address: string, chain: string) {
       usdValue: toNumber(token.usd_value),
       usdValue24h: toNumber(token.usd_value_24hr_usd_change),
       possibleSpam: token.possible_spam ?? false,
+      verifiedContract: token.verified_contract ?? false,
       logo: token.logo ?? null,
       isNative: false,
     }));
