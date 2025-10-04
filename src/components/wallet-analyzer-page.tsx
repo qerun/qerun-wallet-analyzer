@@ -20,6 +20,8 @@ type TokenBreakdown = {
   valueUsd: number;
   change24h: number;
   allocationPct: number;
+  amount: number;
+  decimals: number;
 };
 
 type Insight = {
@@ -116,12 +118,12 @@ export default function WalletAnalyzerPage({ initialAddress = "" }: { initialAdd
       try {
         const data = await fetchAnalysis(trimmed);
         const normalizedAddress = data.address ?? trimmed;
+        const pathAddress = trimmed.endsWith(".eth") ? trimmed : normalizedAddress;
 
-        setAddress(normalizedAddress);
         setResult(data);
         setAnalysisMeta(data.meta ?? null);
         setActiveAddress(normalizedAddress);
-        router.replace(`/${encodeURIComponent(normalizedAddress)}`);
+        router.replace(`/${encodeURIComponent(pathAddress)}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unable to analyze wallet right now");
         setResult(null);
@@ -391,6 +393,7 @@ function HoldingsSection({ tokens, loading }: { tokens: TokenBreakdown[]; loadin
             <thead className="bg-[#120806]/70 text-[#f9e7a9]">
               <tr>
                 <th className="px-4 py-3 text-left font-medium">Asset</th>
+                <th className="px-4 py-3 text-right font-medium">Amount</th>
                 <th className="px-4 py-3 text-right font-medium">Value</th>
                 <th className="px-4 py-3 text-right font-medium">24h</th>
                 <th className="px-4 py-3 text-right font-medium">Allocation</th>
@@ -399,7 +402,7 @@ function HoldingsSection({ tokens, loading }: { tokens: TokenBreakdown[]; loadin
             <tbody className="divide-y divide-[#f7d976]/10 bg-[#1a0906]/80 text-[#eadfb7]">
               {loading ? (
                 <tr>
-                  <td className="px-4 py-4 text-sm" colSpan={4}>
+                  <td className="px-4 py-4 text-sm" colSpan={5}>
                     <div className="animate-pulse space-y-2">
                       <div className="h-3 rounded bg-[#f7d976]/20" />
                       <div className="h-3 rounded bg-[#f7d976]/10" />
@@ -408,7 +411,7 @@ function HoldingsSection({ tokens, loading }: { tokens: TokenBreakdown[]; loadin
                 </tr>
               ) : tokens.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-4 text-sm text-[#cdbd8b]" colSpan={4}>
+                  <td className="px-4 py-4 text-sm text-[#cdbd8b]" colSpan={5}>
                     Run an analysis to see per-asset allocations.
                   </td>
                 </tr>
@@ -420,6 +423,9 @@ function HoldingsSection({ tokens, loading }: { tokens: TokenBreakdown[]; loadin
                         <span className="font-medium text-white">{token.symbol}</span>
                         <span className="text-xs text-[#cdbd8b]">{token.protocol}</span>
                       </div>
+                    </td>
+                    <td className="px-4 py-3 text-right text-[#cdbd8b]">
+                      {formatTokenAmount(token.amount, token.symbol)}
                     </td>
                     <td className="px-4 py-3 text-right text-white">{currency.format(token.valueUsd)}</td>
                     <td
@@ -544,7 +550,12 @@ function HistorySection({
                 <p className="text-xs uppercase tracking-[0.18em] text-[#cdbd8b]">
                   {dateTime.format(new Date(tx.timestamp))}
                 </p>
-                <p className="mt-2 text-2xl font-semibold text-white">{formatHistoryValue(tx.valueUsd)}</p>
+                <p className="mt-2 text-2xl font-semibold text-white">
+                  {formatHistoryValue(tx.valueUsd, tx.amount, tx.symbol)}
+                </p>
+                {tx.valueUsd != null && tx.amount != null ? (
+                  <p className="text-sm text-[#cdbd8b]">{formatTokenAmount(tx.amount, tx.symbol)}</p>
+                ) : null}
               </div>
               <div className="space-y-2 text-sm text-[#eadfb7]">
                 <p className="font-medium text-[#f7d976]">{directionLabel(tx.direction)}</p>
@@ -652,11 +663,27 @@ function HistorySkeleton() {
   );
 }
 
-function formatHistoryValue(value: number | null) {
-  if (value == null) {
-    return "—";
+function formatHistoryValue(value: number | null, amount?: number | null, symbol?: string | null) {
+  if (value != null) {
+    return currencyDetailed.format(value);
   }
-  return currencyDetailed.format(value);
+
+  const tokenDisplay = formatTokenAmount(amount ?? null, symbol);
+  return tokenDisplay ?? "—";
+}
+
+function formatTokenAmount(amount: number | null, symbol?: string | null) {
+  if (amount == null || Number.isNaN(amount)) {
+    return null;
+  }
+
+  const abs = Math.abs(amount);
+  const formatter = new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: abs >= 1 ? 4 : 6,
+  });
+
+  const formatted = formatter.format(amount);
+  return symbol ? `${formatted} ${symbol}` : formatted;
 }
 
 function formatDataSource(source: string) {
