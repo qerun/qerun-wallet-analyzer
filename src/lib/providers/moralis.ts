@@ -220,13 +220,12 @@ async function fetchTransactionsForChain(address: string, chain: string, sinceIs
     const data = await moralisFetch<{
       result: MoralisTransaction[];
       cursor?: string | null;
-    }>(`/wallets/${address}/transactions`, {
+    }>(`/${address}`, {
       chain,
       limit: "100",
       order: "desc",
       from_date: sinceIso,
       cursor,
-      include: "usd",
     });
 
     const txs = Array.isArray(data.result) ? data.result : [];
