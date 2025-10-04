@@ -1,4 +1,8 @@
-import { fetchMoralisTransactions, MoralisConfigurationError } from "@/lib/providers/moralis";
+import {
+  fetchMoralisTransactions,
+  MoralisConfigurationError,
+  type MoralisTransaction,
+} from "@/lib/providers/moralis";
 
 export type WalletTransaction = {
   hash: string;
