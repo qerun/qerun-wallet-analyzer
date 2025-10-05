@@ -23,13 +23,18 @@ Open http://localhost:3000 to access the development build. Update `src/app/page
 Create an `.env.local` file to store API keys for blockchain indexers, pricing APIs, and RPC endpoints. Never commit real credentials.
 
 ```env
-MORALIS_API_KEY=your_api_key_here
-MORALIS_CHAINS=eth,arbitrum,optimism
-# Optional: override the default Moralis API endpoint
-# MORALIS_API_BASE=https://deep-index.moralis.io/api/v2.2
+COINBASE_API_KEY=your_coinbase_access_key
+COINBASE_API_SECRET=your_coinbase_private_key
+COINBASE_NETWORK_IDS=1,8453
+# Optional: override the default Coinbase API endpoint
+# COINBASE_API_BASE=https://api.coinbase.com
 ```
 
-Supplying the Moralis key unlocks live balance analytics at `/api/analyze` and six-month transaction history at `/api/history`. Without it, the dashboard falls back to demo data.
+Supplying the Coinbase Onchain credentials unlocks live balance analytics at `/api/analyze` and recent transaction history at `/api/history`. Adjust `COINBASE_NETWORK_IDS` to match the chains available in your plan. Without credentials, the dashboard falls back to demo data.
+
+> **Note**
+> `COINBASE_API_SECRET` should be the raw private key from your CDP API key file (either the PEM-formatted EC key or the base64-encoded Ed25519 key).
+> You can list networks using numeric IDs (e.g. `1,8453`). Slugs such as `base-mainnet` are also supported and will be converted automatically.
 
 ## Deployment
 
