@@ -1,8 +1,12 @@
 import {
-  MoralisConfigurationError,
-  MoralisTokenHolding,
-  fetchMoralisBalances,
-} from "@/lib/providers/moralis";
+  CoinbaseConfigurationError,
+  fetchCoinbaseBalances,
+  type CoinbaseBalanceResource,
+} from "@/lib/providers/coinbase";
+import {
+  buildPriceKey,
+  fetchCoinGeckoPrices,
+} from "@/lib/pricing/coingecko";
 
 export type AnalysisSummary = {
   netWorth: number;
@@ -64,11 +68,16 @@ const MAX_UNIT_PRICE_FOR_UNVERIFIED = 5_000;
 
 export async function analyzeWallet(address: string): Promise<WalletAnalysis> {
   try {
-    const holdings = await fetchMoralisBalances(address);
-    const tokens = buildTokens(holdings);
+    const holdings = await fetchCoinbaseBalances(address);
+    const priceMap = await fetchCoinGeckoPrices(holdings);
+
+    const tokens = buildTokens(holdings, priceMap);
     const netWorth = tokens.reduce((acc, token) => acc + token.valueUsd, 0);
 
-    const netWorth24h = tokens.reduce((acc, token) => acc + ((token as ExtendedAnalysisToken).valueUsd24h ?? token.valueUsd), 0);
+    const netWorth24h = tokens.reduce(
+      (acc, token) => acc + ((token as ExtendedAnalysisToken).valueUsd24h ?? token.valueUsd),
+      0,
+    );
     const netWorthChange = netWorth - netWorth24h;
     const netWorthChangePct = netWorth24h > VALUE_EPSILON ? (netWorthChange / netWorth24h) * 100 : 0;
 
@@ -89,68 +98,96 @@ export async function analyzeWallet(address: string): Promise<WalletAnalysis> {
       tokens,
       insights,
       meta: {
-        source: "moralis",
-        isFallback: false,
+        source: "coinbase",
+        isFallback: tokens.length === 0,
       },
     };
   } catch (error) {
     console.error("analyzeWallet failed", error);
-    if (error instanceof MoralisConfigurationError) {
-      throw new Error("Moralis API key is missing or invalid");
+    if (error instanceof CoinbaseConfigurationError) {
+      throw new Error("Coinbase API credentials are missing or invalid");
     }
 
     throw error instanceof Error ? error : new Error("Failed to analyze wallet");
   }
 }
 
-function buildTokens(holdings: MoralisTokenHolding[]): ExtendedAnalysisToken[] {
+function buildTokens(
+  holdings: CoinbaseBalanceResource[],
+  priceMap: Map<string, number>,
+): ExtendedAnalysisToken[] {
   const tokens = holdings
     .map((holding) => {
-      const valueUsd = deriveUsdValue(holding);
-      if (valueUsd < VALUE_EPSILON) {
+      const chain = normalizeChain(holding.network_id);
+      const symbol =
+        normalizeSymbol(holding.asset?.symbol) ??
+        normalizeSymbol(holding.asset?.asset_id) ??
+        chain.toUpperCase();
+
+      const decimals = resolveDecimals(holding);
+      const amount = resolveAmount(holding, decimals);
+      const priceFromMap = getPriceForHolding(holding, priceMap);
+      const valueUsd = extractUsdValue(holding);
+      const hasMeaningfulAmount = amount != null && amount > VALUE_EPSILON;
+      const effectiveValueUsd = (() => {
+        if (priceFromMap != null && hasMeaningfulAmount) {
+          return priceFromMap * (amount ?? 0);
+        }
+        if (valueUsd != null) {
+          return valueUsd;
+        }
+        return 0;
+      })();
+
+      if (!hasMeaningfulAmount && effectiveValueUsd < VALUE_EPSILON) {
         return null;
       }
 
-      if (holding.isNative === false && holding.possibleSpam) {
-        console.warn("[Analyzer] Dropping possible spam token", {
-          chain: holding.chain,
-          symbol: holding.symbol,
-          valueUsd,
+      if (holding.asset?.is_scam) {
+        console.warn("[Analyzer] Dropping asset flagged as scam", {
+          chain,
+          symbol,
+          valueUsd: effectiveValueUsd,
         });
         return null;
       }
+
+      const isNative = !holding.asset?.address || holding.asset?.token_type === "native";
+      const isVerified = holding.asset?.is_verified ?? true;
+      const unitPrice = hasMeaningfulAmount ? effectiveValueUsd / (amount ?? 1) : null;
 
       if (
-        holding.isNative === false &&
-        holding.verifiedContract === false &&
-        (valueUsd > MAX_UNVERIFIED_TOKEN_VALUE ||
-          (holding.usdPrice != null && holding.usdPrice > MAX_UNIT_PRICE_FOR_UNVERIFIED))
+        !isNative &&
+        !isVerified &&
+        (effectiveValueUsd > MAX_UNVERIFIED_TOKEN_VALUE ||
+          (unitPrice != null && unitPrice > MAX_UNIT_PRICE_FOR_UNVERIFIED))
       ) {
         console.warn("[Analyzer] Dropping unverified high value token", {
-          chain: holding.chain,
-          symbol: holding.symbol,
-          valueUsd,
-          usdPrice: holding.usdPrice,
+          chain,
+          symbol,
+          valueUsd: effectiveValueUsd,
+          unitPrice,
         });
         return null;
       }
 
-      const valueUsd24h = holding.usdValue24h ?? null;
-      const change24h = valueUsd24h && valueUsd24h > VALUE_EPSILON ? ((valueUsd - valueUsd24h) / valueUsd24h) * 100 : 0;
-
-      const decimals = holding.decimals ?? 18;
-      const amount = parseTokenAmount(holding.balance ?? "0", decimals);
+      const valueUsd24h = deriveUsdValue24h(holding, effectiveValueUsd);
+      const change24h =
+        valueUsd24h && valueUsd24h > VALUE_EPSILON
+          ? ((effectiveValueUsd - valueUsd24h) / valueUsd24h) * 100
+          : 0;
 
       const entry: ExtendedAnalysisToken = {
-        symbol: holding.symbol,
-        protocol: holding.chain,
-        valueUsd,
+        symbol,
+        protocol: chain,
+        valueUsd: effectiveValueUsd,
         change24h,
         allocationPct: 0,
-        amount,
+        amount: amount ?? 0,
         decimals,
         valueUsd24h,
       };
+
       return entry;
     })
     .filter((token): token is ExtendedAnalysisToken => token !== null)
@@ -166,31 +203,16 @@ function buildTokens(holdings: MoralisTokenHolding[]): ExtendedAnalysisToken[] {
   return tokens;
 }
 
-function parseTokenAmount(balance: string, decimals: number) {
-  const decimalFactor = Math.pow(10, decimals);
-  return Number.parseFloat(balance ?? "0") / decimalFactor;
-}
-
-function deriveUsdValue(holding: MoralisTokenHolding) {
-  if (holding.usdValue != null) {
-    return holding.usdValue;
-  }
-  if (holding.usdPrice != null) {
-    const decimals = holding.decimals ?? 18;
-    const amount = parseTokenAmount(holding.balance ?? "0", decimals);
-    return amount * holding.usdPrice;
-  }
-  return 0;
-}
-
 function computeRisk(tokens: AnalysisToken[]): AnalysisSummary["riskLevel"] {
   const total = tokens.reduce((acc, token) => acc + token.valueUsd, 0);
   if (total < VALUE_EPSILON) {
     return "Moderate";
   }
+
   const stableValue = tokens
     .filter((token) => STABLE_SYMBOLS.has(token.symbol.toUpperCase()))
     .reduce((acc, token) => acc + token.valueUsd, 0);
+
   const stableRatio = stableValue / total;
 
   if (stableRatio >= 0.4) {
@@ -207,7 +229,7 @@ function buildInsights(
   netWorth: number,
   netWorthChange: number,
   netWorthChangePct: number,
-  riskLevel: AnalysisSummary["riskLevel"]
+  riskLevel: AnalysisSummary["riskLevel"],
 ): AnalysisInsight[] {
   const insights: AnalysisInsight[] = [];
 
@@ -265,22 +287,231 @@ function buildInsights(
   } else {
     insights.push({
       title: "Net worth dipped",
-      detail: `Portfolio value decreased by $${formatNumber(Math.abs(netWorthChange))} (${netWorthChangePct.toFixed(2)}%) over the past day. Review large outflows or underperforming assets.`,
+      detail: `Net worth fell by $${formatNumber(Math.abs(netWorthChange))} (${netWorthChangePct.toFixed(2)}%) in the last 24 hours. Consider reviewing recent outflows or market moves.`,
       tone: "warning",
     });
   }
 
-  insights.push({
-    title: "Risk posture snapshot",
-    detail: `Current allocation maps to a ${riskLevel.toLowerCase()} risk profile. Adjust stablecoin and top-token exposure to match treasury policy.`,
-    tone: "neutral",
-  });
+  if (riskLevel === "Conservative" && netWorthChange > 0) {
+    insights.push({
+      title: "Conservative stance working",
+      detail: "Your stable-heavy mix is still capturing upside. Monitor if it remains aligned with treasury targets.",
+      tone: "positive",
+    });
+  }
 
   return insights;
 }
 
 function formatNumber(value: number) {
-  return value.toLocaleString("en-US", {
-    maximumFractionDigits: value >= 1000 ? 0 : 2,
-  });
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(2)}M`;
+  }
+  if (value >= 1_000) {
+    return `${(value / 1_000).toFixed(2)}K`;
+  }
+  return value.toFixed(2);
+}
+
+const CHAIN_ALIAS_MAP: Record<string, string> = {
+  eth: "eth",
+  ethereum: "eth",
+  "1": "eth",
+  "eip155:1": "eth",
+  "ethereum-mainnet": "eth",
+  base: "base",
+  "8453": "base",
+  "eip155:8453": "base",
+  "base-mainnet": "base",
+  polygon: "polygon",
+  "137": "polygon",
+  "eip155:137": "polygon",
+  "polygon-mainnet": "polygon",
+  arbitrum: "arbitrum",
+  "42161": "arbitrum",
+  "eip155:42161": "arbitrum",
+  "arbitrum-one": "arbitrum",
+  optimism: "optimism",
+  "10": "optimism",
+  "eip155:10": "optimism",
+  "optimism-mainnet": "optimism",
+  bsc: "bsc",
+  "56": "bsc",
+  "eip155:56": "bsc",
+  "bnb-mainnet": "bsc",
+  avalanche: "avalanche",
+  "43114": "avalanche",
+  "eip155:43114": "avalanche",
+  fantom: "fantom",
+  "250": "fantom",
+  "eip155:250": "fantom",
+  zksync: "zksync",
+  "324": "zksync",
+  "eip155:324": "zksync",
+  "zksync-era": "zksync",
+  linea: "linea",
+  "1101": "linea",
+  "eip155:1101": "linea",
+  scroll: "scroll",
+  "534352": "scroll",
+  "eip155:534352": "scroll",
+  metis: "metis",
+  "1088": "metis",
+  "eip155:1088": "metis",
+  klaytn: "klaytn",
+  "8217": "klaytn",
+  "eip155:8217": "klaytn",
+  celo: "celo",
+  "42220": "celo",
+  "eip155:42220": "celo",
+  moonbeam: "moonbeam",
+  "1284": "moonbeam",
+  "eip155:1284": "moonbeam",
+  moonriver: "moonriver",
+  "1285": "moonriver",
+  "eip155:1285": "moonriver",
+  aurora: "aurora",
+  "1313161554": "aurora",
+  "eip155:1313161554": "aurora",
+  cronos: "cronos",
+  "25": "cronos",
+  "eip155:25": "cronos",
+  gnosis: "gnosis",
+  xdai: "gnosis",
+  "100": "gnosis",
+  "eip155:100": "gnosis",
+  harmony: "harmony",
+  "1666600000": "harmony",
+  "eip155:1666600000": "harmony",
+};
+
+function normalizeChain(networkId: string | number | null | undefined): string {
+  if (networkId == null) {
+    return "eth";
+  }
+
+  const key = String(networkId).toLowerCase();
+  return CHAIN_ALIAS_MAP[key] ?? key;
+}
+
+function resolveDecimals(holding: CoinbaseBalanceResource) {
+  return (
+    holding.asset?.decimals ??
+    holding.quantity?.decimals ??
+    holding.native_balance?.decimals ??
+    18
+  );
+}
+
+function resolveAmount(holding: CoinbaseBalanceResource, decimals: number): number | null {
+  const directAmount = toNumber(holding.amount);
+  if (directAmount != null && holding.asset) {
+    if (typeof holding.amount === "string" && !holding.amount.includes(".")) {
+      const divisor = Math.pow(10, decimals);
+      return divisor === 0 ? directAmount : directAmount / divisor;
+    }
+    return directAmount;
+  }
+
+  const decimalAmount = toNumber(holding.quantity?.amount_decimal);
+  if (decimalAmount != null) {
+    return decimalAmount;
+  }
+
+  const rawAmount = holding.quantity?.amount ?? holding.native_balance?.amount;
+  if (rawAmount != null) {
+    if (typeof rawAmount === "string") {
+      if (rawAmount.includes(".")) {
+        const float = Number.parseFloat(rawAmount);
+        if (Number.isFinite(float)) {
+          return float;
+        }
+      } else {
+        const integer = Number.parseFloat(rawAmount);
+        if (Number.isFinite(integer)) {
+          const divisor = Math.pow(10, decimals);
+          return divisor === 0 ? integer : integer / divisor;
+        }
+      }
+    } else if (typeof rawAmount === "number" && Number.isFinite(rawAmount)) {
+      const divisor = Math.pow(10, decimals);
+      return divisor === 0 ? rawAmount : rawAmount / divisor;
+    }
+  }
+
+  return null;
+}
+
+function extractUsdValue(holding: CoinbaseBalanceResource): number | null {
+  const direct = toNumber(holding.value_usd);
+  if (direct != null) {
+    return Math.abs(direct);
+  }
+
+  const sources = [holding.value, holding.native_value];
+  for (const source of sources) {
+    if (!source) continue;
+    const usd =
+      toNumber(source.amount_usd ?? source.usd_value ?? source.amount) ??
+      (typeof source.symbol === "string" && source.symbol.toUpperCase() === "USD"
+        ? toNumber(source.amount)
+        : null);
+    if (usd != null) {
+      return Math.abs(usd);
+    }
+  }
+
+  return null;
+}
+
+function deriveUsdValue24h(holding: CoinbaseBalanceResource, currentValue: number): number | null {
+  const change = holding.change_24h;
+  if (!change) {
+    return null;
+  }
+
+  const changeUsd =
+    toNumber(change.amount_usd ?? change.usd_value ?? change.amount) ??
+    (typeof change.symbol === "string" && change.symbol.toUpperCase() === "USD"
+      ? toNumber(change.amount)
+      : null);
+  if (changeUsd == null) {
+    return null;
+  }
+
+  const prior = currentValue - changeUsd;
+  return prior > 0 ? prior : null;
+}
+
+function normalizeSymbol(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed.toUpperCase();
+}
+
+function getPriceForHolding(
+  holding: CoinbaseBalanceResource,
+  priceMap: Map<string, number>,
+): number | null {
+  const key = buildPriceKey(holding);
+  if (!key) {
+    return null;
+  }
+  return priceMap.get(key) ?? null;
+}
+
+function toNumber(value: unknown): number | null {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "string") {
+    if (value.trim() === "") {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }

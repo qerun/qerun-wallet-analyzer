@@ -3,7 +3,7 @@ import { SignJWT, importJWK, importPKCS8, type JWTPayload } from "jose";
 
 const DEFAULT_BASE_URL =
   process.env.COINBASE_API_BASE ?? "https://api.cdp.coinbase.com/platform";
-const DEFAULT_NETWORKS = (process.env.COINBASE_NETWORK_IDS ?? "1")
+const DEFAULT_NETWORKS = (process.env.COINBASE_NETWORK_IDS ?? "ethereum-mainnet")
   .split(",")
   .map((chain) => chain.trim())
   .filter(Boolean);
@@ -34,43 +34,86 @@ function requireCredentials(): CoinbaseApiCredentials {
 }
 
 const NETWORK_ID_MAP: Record<string, string> = {
-  "ethereum-mainnet": "1",
-  "eth-mainnet": "1",
-  ethereum: "1",
-  eth: "1",
-  "base-mainnet": "8453",
-  base: "8453",
-  "polygon-mainnet": "137",
-  polygon: "137",
-  "matic-mainnet": "137",
-  "arbitrum-one": "42161",
-  arbitrum: "42161",
-  "optimism-mainnet": "10",
-  optimism: "10",
-  "bnb-mainnet": "56",
-  bsc: "56",
-  "avalanche-mainnet": "43114",
-  avalanche: "43114",
-  "fantom-mainnet": "250",
-  fantom: "250",
-  "zksync": "324",
-  "zksync-era": "324",
-  linea: "1101",
-  "linea-mainnet": "1101",
-  scroll: "534352",
-  "scroll-mainnet": "534352",
-  metis: "1088",
-  "metis-andromeda": "1088",
-  klaytn: "8217",
-  celo: "42220",
-  "celo-mainnet": "42220",
-  moonbeam: "1284",
-  moonriver: "1285",
-  aurora: "1313161554",
-  cronos: "25",
-  gnosis: "100",
-  xdai: "100",
-  harmony: "1666600000",
+  "ethereum-mainnet": "ethereum-mainnet",
+  "eth-mainnet": "ethereum-mainnet",
+  ethereum: "ethereum-mainnet",
+  eth: "ethereum-mainnet",
+  "1": "ethereum-mainnet",
+  "eip155:1": "ethereum-mainnet",
+  "base-mainnet": "base-mainnet",
+  base: "base-mainnet",
+  "8453": "base-mainnet",
+  "eip155:8453": "base-mainnet",
+  "base-sepolia": "base-sepolia",
+  "84532": "base-sepolia",
+  "eip155:84532": "base-sepolia",
+  "polygon-mainnet": "polygon-mainnet",
+  polygon: "polygon-mainnet",
+  "matic-mainnet": "polygon-mainnet",
+  "137": "polygon-mainnet",
+  "eip155:137": "polygon-mainnet",
+  "arbitrum-one": "arbitrum-one",
+  arbitrum: "arbitrum-one",
+  "42161": "arbitrum-one",
+  "eip155:42161": "arbitrum-one",
+  "optimism-mainnet": "optimism-mainnet",
+  optimism: "optimism-mainnet",
+  "10": "optimism-mainnet",
+  "eip155:10": "optimism-mainnet",
+  "bnb-mainnet": "bnb-mainnet",
+  bsc: "bnb-mainnet",
+  "56": "bnb-mainnet",
+  "eip155:56": "bnb-mainnet",
+  "avalanche-mainnet": "avalanche-mainnet",
+  avalanche: "avalanche-mainnet",
+  "43114": "avalanche-mainnet",
+  "eip155:43114": "avalanche-mainnet",
+  "fantom-mainnet": "fantom-mainnet",
+  fantom: "fantom-mainnet",
+  "250": "fantom-mainnet",
+  "eip155:250": "fantom-mainnet",
+  "zksync": "zksync",
+  "zksync-era": "zksync",
+  "324": "zksync",
+  "eip155:324": "zksync",
+  linea: "linea-mainnet",
+  "linea-mainnet": "linea-mainnet",
+  "1101": "linea-mainnet",
+  "eip155:1101": "linea-mainnet",
+  scroll: "scroll-mainnet",
+  "scroll-mainnet": "scroll-mainnet",
+  "534352": "scroll-mainnet",
+  "eip155:534352": "scroll-mainnet",
+  metis: "metis-andromeda",
+  "metis-andromeda": "metis-andromeda",
+  "1088": "metis-andromeda",
+  "eip155:1088": "metis-andromeda",
+  klaytn: "klaytn-mainnet",
+  "8217": "klaytn-mainnet",
+  "eip155:8217": "klaytn-mainnet",
+  celo: "celo-mainnet",
+  "celo-mainnet": "celo-mainnet",
+  "42220": "celo-mainnet",
+  "eip155:42220": "celo-mainnet",
+  moonbeam: "moonbeam-mainnet",
+  "1284": "moonbeam-mainnet",
+  "eip155:1284": "moonbeam-mainnet",
+  moonriver: "moonriver-mainnet",
+  "1285": "moonriver-mainnet",
+  "eip155:1285": "moonriver-mainnet",
+  aurora: "aurora-mainnet",
+  "1313161554": "aurora-mainnet",
+  "eip155:1313161554": "aurora-mainnet",
+  cronos: "cronos-mainnet",
+  "25": "cronos-mainnet",
+  "eip155:25": "cronos-mainnet",
+  gnosis: "gnosis-mainnet",
+  xdai: "gnosis-mainnet",
+  "100": "gnosis-mainnet",
+  "eip155:100": "gnosis-mainnet",
+  harmony: "harmony-mainnet",
+  "1666600000": "harmony-mainnet",
+  "eip155:1666600000": "harmony-mainnet",
 };
 
 function toNetworkId(entry: string): string | null {
@@ -98,7 +141,7 @@ function toNetworkId(entry: string): string | null {
 
 function resolveNetworks(): string[] {
   const resolved = DEFAULT_NETWORKS.map(toNetworkId).filter((val): val is string => Boolean(val));
-  return resolved.length > 0 ? resolved : ["1"];
+  return resolved.length > 0 ? resolved : ["ethereum-mainnet"];
 }
 
 type CoinbasePagination = {
@@ -125,6 +168,11 @@ export type CoinbaseTransactionResource = {
   native_value?: CoinbaseValue | null;
   fee?: CoinbaseFee | null;
   metadata?: Record<string, unknown> | null;
+  transaction_hash?: string | null;
+  transaction_link?: string | null;
+  status?: string | null;
+  token_transfers?: any[] | null;
+  transaction_access_list?: any[] | null;
 };
 
 type CoinbaseParty = {
@@ -191,7 +239,7 @@ async function coinbaseFetch<T>(path: string, search: Record<string, string | un
       url.searchParams.set(key, value);
     }
   });
-  
+
   const method = "GET";
   const token = await buildJwtToken(credentials, url, method);
 
@@ -213,14 +261,13 @@ async function coinbaseFetch<T>(path: string, search: Record<string, string | un
   return (await response.json()) as T;
 }
 
-export async function fetchCoinbaseTransactions(address: string, days = 14) {
+export async function fetchCoinbaseTransactions(address: string) {
   const networks = resolveNetworks();
   const since = new Date();
-  since.setDate(since.getDate() - days);
-  const sinceIso = since.toISOString();
+  since.setDate(since.getDate() - 1);
 
   const settlements = await Promise.allSettled(
-    networks.map((network) => fetchTransactionsForNetwork(address, network, sinceIso)),
+    networks.map((network) => fetchTransactionsForNetwork(address, network)),
   );
 
 
@@ -244,7 +291,7 @@ export async function fetchCoinbaseTransactions(address: string, days = 14) {
   return transactions;
 }
 
-async function fetchTransactionsForNetwork(address: string, networkId: string, sinceIso: string) {
+async function fetchTransactionsForNetwork(address: string, networkId: string) {
   const items: CoinbaseTransactionResource[] = [];
   const seen = new Set<string>();
   let cursor: string | undefined;
@@ -256,11 +303,11 @@ async function fetchTransactionsForNetwork(address: string, networkId: string, s
       `/v1/networks/${encodeURIComponent(networkId)}/addresses/${encodeURIComponent(address)}/transactions`,
       {
         cursor,
-        limit: "100",
       },
     );
 
     const batch = Array.isArray(response.data) ? response.data : [];
+    console.log(batch[0]);
     batch.forEach((tx) => {
       const normalizedNetwork = tx.network_id ?? networkId;
       let metadataHash = "";
@@ -305,25 +352,7 @@ async function fetchTransactionsForNetwork(address: string, networkId: string, s
     }
   } while (cursor);
 
-  if (!sinceIso) {
-    return items;
-  }
-
-  const sinceTs = Date.parse(sinceIso);
-  if (Number.isNaN(sinceTs)) {
-    return items;
-  }
-
-  return items.filter((tx) => {
-    if (!tx.block_timestamp) {
-      return true;
-    }
-    const ts = Date.parse(tx.block_timestamp);
-    if (Number.isNaN(ts)) {
-      return true;
-    }
-    return ts >= sinceTs;
-  });
+  return items;
 }
 
 export async function fetchCoinbaseBalances(address: string) {
