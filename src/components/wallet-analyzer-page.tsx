@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
 
 type SummaryMetrics = {
   netWorth: number;
@@ -84,6 +85,20 @@ const dateTime = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
   timeStyle: "short",
 });
+
+// Color palette for pie chart
+const CHART_COLORS = [
+  "#f7d976", // Qerun gold
+  "#8b0000", // Qerun accent
+  "#ff6b35", // Orange
+  "#4ecdc4", // Teal
+  "#45b7d1", // Blue
+  "#96ceb4", // Green
+  "#ffeaa7", // Light yellow
+  "#dda0dd", // Plum
+  "#98d8c8", // Mint
+  "#f7dc6f", // Light gold
+];
 
 export default function WalletAnalyzerPage({ initialAddress = "" }: { initialAddress?: string }) {
   const router = useRouter();
@@ -383,8 +398,55 @@ function HoldingsSection({ tokens, loading }: { tokens: TokenBreakdown[]; loadin
         <p className="text-sm text-[#d4c49b]">
           Distribution of holdings by asset and protocol. Chart renders once live data feeds are connected.
         </p>
-        <div className="flex h-48 items-center justify-center rounded-2xl border border-dashed border-[#f7d976]/30 bg-[#120806]/70 text-sm text-[#cdbd8b]">
-          <span>{loading ? "Loading chart..." : "Allocation chart will appear here."}</span>
+        <div className="h-96 rounded-2xl border border-[#f7d976]/20 bg-[#120806]/70 p-4">
+          {loading ? (
+            <div className="flex h-full items-center justify-center text-sm text-[#cdbd8b]">
+              Loading chart...
+            </div>
+          ) : tokens && tokens.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={tokens.map((token: TokenBreakdown) => ({
+                    name: `${token.symbol} (${token.protocol})`,
+                    value: token.allocationPct,
+                    amount: currencyDetailed.format(token.valueUsd),
+                  }))}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={120}
+                  paddingAngle={2}
+                  dataKey="value"
+                >
+                  {tokens.map((_: TokenBreakdown, index: number) => (
+                    <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  formatter={(value: number, name: string, props: any) => [
+                    `${value.toFixed(2)}% (${props.payload.amount})`,
+                    name
+                  ]}
+                  contentStyle={{
+                    backgroundColor: '#120806',
+                    border: '1px solid #f7d976',
+                    borderRadius: '8px',
+                    color: '#f9e7a9'
+                  }}
+                />
+                <Legend
+                  wrapperStyle={{ color: '#cdbd8b', fontSize: '12px' }}
+                  iconType="circle"
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex h-full items-center justify-center text-sm text-[#cdbd8b]">
+              No allocation data available
+            </div>
+          )}
         </div>
       </div>
       <div>
