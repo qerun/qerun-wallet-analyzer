@@ -149,8 +149,6 @@ const CHAIN_ALIAS_MAP: Record<string, string> = {
   "eip155:1666600000": "harmony",
 };
 
-const HISTORY_LOOKBACK_DAYS: number | null = null;
-
 export async function getWalletHistory(address: string) {
   const normalizedAddress = address.toLowerCase();
 
@@ -309,7 +307,7 @@ function selectPrimaryTransfer(
 
   const targetKey = direction === "in" ? "to" : direction === "out" ? "from" : null;
   if (targetKey) {
-    const match = transfers.find((transfer) => safeLowerCase((transfer as Record<string, unknown>)[targetKey]) === normalizedAddress);
+    const match = transfers.find((transfer) => safeLowerCase((transfer as Record<string, unknown>)[targetKey] as string | null | undefined) === normalizedAddress);
     if (match) {
       return match;
     }

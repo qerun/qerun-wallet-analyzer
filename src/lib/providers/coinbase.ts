@@ -150,6 +150,19 @@ type CoinbasePagination = {
   has_next?: boolean;
 };
 
+type CoinbaseTokenTransfer = {
+  from?: string | null;
+  to?: string | null;
+  value?: string | null;
+  contract_address?: string | null;
+  token_id?: string | null;
+};
+
+type CoinbaseAccessListEntry = {
+  address?: string | null;
+  storage_keys?: string[] | null;
+};
+
 type CoinbaseTransactionResponse = {
   data?: CoinbaseTransactionResource[];
   pagination?: CoinbasePagination | null;
@@ -171,8 +184,8 @@ export type CoinbaseTransactionResource = {
   transaction_hash?: string | null;
   transaction_link?: string | null;
   status?: string | null;
-  token_transfers?: any[] | null;
-  transaction_access_list?: any[] | null;
+  token_transfers?: CoinbaseTokenTransfer[] | null;
+  transaction_access_list?: CoinbaseAccessListEntry[] | null;
 };
 
 type CoinbaseParty = {

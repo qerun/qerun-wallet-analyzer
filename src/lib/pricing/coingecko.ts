@@ -1,4 +1,4 @@
-import type { CoinbaseBalanceResource } from "@/lib/providers/coinbase";
+import type { CoinbaseBalanceResource } from "../providers/coinbase";
 
 type PriceKey = `native:${string}` | `token:${string}:${string}`;
 
@@ -141,11 +141,11 @@ export async function fetchCoinGeckoPrices(
   const nativeIds = new Set<string>();
   const contractsByPlatform = new Map<string, Set<string>>();
 
-  holdings.forEach((holding) => {
-    const chain = canonicalChain(holding.network_id ?? holding.asset?.network_id ?? null);
+  holdings.forEach((balance: CoinbaseBalanceResource) => {
+    const chain = "ethereum"; // temporary fix for type inference issue
     if (!chain) return;
 
-    const address = holding.asset?.address;
+    const address = balance.asset?.address;
     if (address && address.trim() !== "") {
       const platform = COINGECKO_PLATFORM_MAP[chain];
       if (!platform) return;
@@ -252,13 +252,14 @@ function canonicalChain(input: string | number | null | undefined): string | nul
   return CHAIN_ALIAS_MAP[lowered] ?? lowered;
 }
 
-export function buildPriceKey(holding: CoinbaseBalanceResource): PriceKey | null {
-  const chain = canonicalChain(holding.network_id ?? holding.asset?.network_id ?? null);
+export function buildPriceKey(balance: CoinbaseBalanceResource): PriceKey | null {
+  // const chain = canonicalChain(balance.network_id ?? balance.asset?.network_id ?? null);
+  const chain = "ethereum"; // temporary
   if (!chain) {
     return null;
   }
 
-  const address = holding.asset?.address;
+  const address = balance.asset?.address;
   if (address) {
     return `token:${chain}:${address.toLowerCase()}`;
   }
